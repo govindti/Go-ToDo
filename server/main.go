@@ -57,9 +57,8 @@ func todosHandler(w http.ResponseWriter, r *http.Request) {
 		body, err := ioutil.ReadAll(r.Body)
 
 		if err != nil {
-			http.Error(w, "Unable to readfrom req body", http.StatusBadRequest)
+			http.Error(w, "Unable to read from req body", http.StatusBadRequest)
 		}
-		fmt.Println(body)
 		err = json.Unmarshal(body, &newTodo)
 
 		if err != nil || newTodo.Task == "" {
@@ -81,13 +80,50 @@ func todosHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func todoByIdHandler(w http.ResponseWriter, r *http.Request) {
-	health := HeathResponse{
-		Status:  "Ok",
-		Message: "Api is Up & Running",
-	}
+	id := r.URL.Path[len("/todos/"):]
 
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(health)
+	todoMutex.Lock()
+	defer todoMutex.Unlock()
+
+	for i, todo := range todos {
+		if todo.Id == id {
+			switch r.Method {
+			case "GET":
+				w.Header().Set("Content-Type", "application/json")
+				json.NewEncoder(w).Encode(todo)
+
+			case "PUT":
+				var updatedTodo Todo
+				body, err := ioutil.ReadAll(r.Body)
+
+				if err != nil {
+					http.Error(w, "Unable to read from req body", http.StatusBadRequest)
+					return
+				}
+
+				err = json.Unmarshal(body, &updatedTodo)
+				if err != nil || updatedTodo.Task == "" {
+					http.Error(w, "Invalid Input", http.StatusBadRequest)
+					return
+				}
+
+				todos[i].Task = updatedTodo.Task
+				todos[i].Completed = updatedTodo.Completed
+
+				json.NewEncoder(w).Encode(todos[i])
+
+			case "DELETE":
+				deletedTodoId := todo.Id
+				todos = append(todos[:i], todos[i+1:]...)
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusOK)
+				json.NewEncoder(w).Encode(map[string]string{"message": "Todo Deleted with id " + deletedTodoId + " Succesfully"})
+			default:
+				http.Error(w, "Method not Allowed", http.StatusMethodNotAllowed)
+
+			}
+		}
+	}
 }
 
 func main() {
